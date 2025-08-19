@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ja" translate="no">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>外部ブラウザで開くテスト / Open In Other Browser</title>
+	<meta name="description" content="iOSでカスタムURLスキームをユーザー操作で起動し、許可ドメインだけを外部ブラウザで開く検証用ページ" />
+	<style>
+		:root {
+			color-scheme: light dark;
+			--bg: #f7f9fb;
+			--fg: #1b2733;
+			--accent: #0d6efd;
+			--accent-hover: #0b5ed7;
+			--danger: #c62828;
+			--ok: #1b5e20;
+			font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+		}
+		@media (prefers-color-scheme: dark){
+			:root { --bg:#141A20; --fg:#e4e8ec; }
+		}
+		body { margin:0; background:var(--bg); color:var(--fg); line-height:1.5; }
+		header { padding:1.2rem clamp(1rem,3vw,2rem); background:#fff0; backdrop-filter: blur(4px); position:sticky; top:0; }
+		h1 { font-size:1.25rem; margin:0 0 .25rem; }
+		main { max-width:880px; margin:0 auto; padding:1.2rem clamp(1rem,3vw,2rem) 3rem; }
+		section { margin-bottom:2.25rem; }
+		code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace; font-size:.9rem; }
+		.target-url { font-weight:600; word-break:break-all; }
+		.buttons { display:grid; gap:.75rem; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); margin-top:1rem; }
+		button, a.btn { cursor:pointer; border:1px solid var(--accent); background:var(--accent); color:#fff; padding:.65rem .9rem; font:inherit; border-radius:6px; text-decoration:none; text-align:center; position:relative; transition:.15s background,.15s transform; }
+		button.secondary, a.btn.secondary { background:#fff0; color:var(--accent); }
+		button:hover:not(:disabled), a.btn:hover { background:var(--accent-hover); }
+		button.secondary:hover, a.btn.secondary:hover { background:rgba(13,110,253,.1); }
+		button:active { transform:translateY(2px); }
+		button:disabled { opacity:.5; cursor:not-allowed; }
+		.error { color:var(--danger); font-weight:600; }
+		.success { color:var(--ok); }
+		.small { font-size:.8rem; opacity:.75; }
+		details { background:rgba(0,0,0,.04); padding:.75rem .9rem; border-radius:6px; }
+		.input-row { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.75rem; }
+		.input-row input[type=url] { flex:1 1 340px; padding:.55rem .65rem; font:inherit; border:1px solid #9996; border-radius:6px; }
+		.log { font-size:.7rem; white-space:pre-wrap; background:#00000008; padding:.5rem .6rem; border-radius:6px; max-height:160px; overflow:auto; }
+		footer { margin-top:3rem; font-size:.65rem; opacity:.6; text-align:center; }
+	</style>
+</head>
+<body>
+	<header>
+		<h1>外部ブラウザで開く検証ページ</h1>
+		<div class="small">Query: <code>?url=encodeURIComponent(目的URL)</code> を付与してアクセス / iOSは自動遷移せずタップで起動</div>
+	</header>
+	<main>
+		<section id="status-section">
+			<h2 style="font-size:1.05rem;margin:.2rem 0 .75rem">ターゲットURL</h2>
+			<div id="targetInfo">読み込み中…</div>
+			<div class="buttons" id="buttons" hidden></div>
+			<p class="small" id="allowNote"></p>
+		</section>
+
+		<section id="manual-input-section" hidden>
+			<h3 style="margin:0 0 .4rem;font-size:1rem">URL 手動入力</h3>
+			<p class="small">許可ドメインのみ生成（http/https）。入力後「ボタン生成」を押してください。</p>
+			<div class="input-row">
+				<input id="manualUrl" type="url" placeholder="" value="https://www.google.com" inputmode="url" autocomplete="off" />
+				<button id="generateBtn">ボタン生成</button>
+			</div>
+			<div id="manualMsg" class="small" style="margin-top:.5rem"></div>
+		</section>
+
+		<section>
+			<h3 style="margin:0 0 .5rem;font-size:1rem">使い方 (3ステップ)</h3>
+			<ol style="margin:.2rem 0 0;padding-left:1.2rem;">
+				<li>このページ (<code>https://yourdomain.example/open-in.html</code> など) を配置。</li>
+				<li>QRコードに <code>https://yourdomain.example/open-in.html?url=&lt;ENCODED&gt;</code> を埋め込む。
+					<br />
+				</li>
+				<li>iPhoneで読み取り → ランディング表示 → 希望ブラウザのボタンをタップ。</li>
+			</ol>
+		</section>
+
+		<section>
+			<h3 style="margin:0 0 .5rem;font-size:1rem">実装ポイント</h3>
+			<ul style="margin:.2rem 0 0;padding-left:1.2rem;">
+				<li>自動遷移なし（ユーザー操作必須 / iOS 仕様対応）。</li>
+				<li>ブラウザ別カスタムスキーム生成 (Chrome / Edge / Firefox / Brave)。</li>
+				<li>許可ドメイン(ALLOWLIST)のみボタン表示 → オープンリダイレクト防止。</li>
+				<li>Safari(既定)で通常オープン / URLコピー / Android intent 例。</li>
+			</ul>
+		</section>
+
+		<section>
+			<h3 style="margin:0 0 .5rem;font-size:1rem">Android intent:// 例</h3>
+			<details>
+				<summary>表示 / Show</summary>
+				<p class="small">Chrome で開く例 (https の場合):</p>
+				<pre id="intentExample" style="margin-top:0"></pre>
+				<p class="small">用途: 将来 Android QR / ディープリンク流用。iOS では無視してください。</p>
+			</details>
+		</section>
+
+		<section>
+			<h3 style="margin:0 0 .5rem;font-size:1rem">ログ</h3>
+			<div id="log" class="log" aria-live="polite"></div>
+		</section>
+	</main>
+	<footer>© <span id="year"></span> Open-In Test. No tracking. All on-device logic.</footer>
+
+	<script>
+		;(() => {
+			const logEl = document.getElementById('log');
+			const buttonsWrap = document.getElementById('buttons');
+			const targetInfo = document.getElementById('targetInfo');
+			const allowNote = document.getElementById('allowNote');
+			const manualSection = document.getElementById('manual-input-section');
+			const manualUrlInput = document.getElementById('manualUrl');
+			const manualMsg = document.getElementById('manualMsg');
+			const intentExample = document.getElementById('intentExample');
+			const yearEl = document.getElementById('year');
+			yearEl.textContent = new Date().getFullYear();
+
+
+			function log(msg){
+				const line = `[${new Date().toISOString()}] ${msg}`;
+				console.debug(line);
+				logEl.textContent = (logEl.textContent + '\n' + line).trim();
+			}
+
+			function safeDecode(raw){
+				if(!raw) return '';
+				// Replace potential Cyrillic 'А' with ASCII 'A' and similar common copy issues
+				const normalized = raw.replace(/%3А/gi,'%3A');
+				try { return decodeURIComponent(normalized); } catch(e){ log('decode failed: '+e); return normalized; }
+			}
+
+			function isAllowed(urlObj){
+        return true;
+			}
+
+			function buildBrowserLinks(u){
+				const urlObj = new URL(u);
+				const isHttps = urlObj.protocol === 'https:';
+				const noScheme = u.replace(/^https?:\/\//i,'');
+				// Chrome iOS
+				const chrome = isHttps ? 'googlechromes://' + noScheme : 'googlechrome://' + noScheme;
+				// Edge iOS
+				const edge = (isHttps ? 'microsoft-edge-https://' : 'microsoft-edge-http://') + noScheme;
+				// Firefox
+				const firefox = 'firefox://open-url?url=' + encodeURIComponent(u);
+				// Brave
+				const brave = 'brave://open-url?url=' + encodeURIComponent(u);
+				return { chrome, edge, firefox, brave };
+			}
+
+			function buildAndroidIntent(u){
+				const urlObj = new URL(u);
+				// Basic Chrome intent
+				return `intent://${urlObj.host}${urlObj.pathname}${urlObj.search}${urlObj.hash}#Intent;scheme=${urlObj.protocol.replace(':','')};package=com.android.chrome;end`; 
+			}
+
+			function clearButtons(){
+				buttonsWrap.innerHTML='';
+				buttonsWrap.hidden=true;
+			}
+
+			function render(u){
+				clearButtons();
+				if(!u){
+					targetInfo.innerHTML = '<span class="error">URL が指定されていません。</span>';
+					manualSection.hidden=false;
+					return;
+				}
+				let urlObj;
+				try { urlObj = new URL(u); } catch(e){
+					targetInfo.innerHTML = `<span class="error">URL パース失敗: ${e}</span>`;
+					manualSection.hidden=false;
+					return;
+				}
+				if(!/^https?:$/.test(urlObj.protocol)){
+					targetInfo.innerHTML = '<span class="error">http/https のみ許可。</span>';
+					manualSection.hidden=false;
+					return;
+				}
+				if(!isAllowed(urlObj)){
+					targetInfo.innerHTML = `<span class="error">許可されていないドメイン: ${urlObj.host}</span>`;
+					allowNote.textContent = 'ALLOW: ' + [...ALLOW_HOSTS, '*'+ALLOW_SUFFIXES.join(', *')] .join(', ');
+					manualSection.hidden=false;
+					return;
+				}
+				const clean = urlObj.toString();
+				targetInfo.innerHTML = `開く対象: <span class="target-url">${clean}</span>`;
+				allowNote.textContent = '許可ドメイン OK。ユーザータップでのみスキーム起動します。';
+				const links = buildBrowserLinks(clean);
+				const androidIntent = buildAndroidIntent(clean);
+				intentExample.textContent = androidIntent;
+
+				const defs = [
+					{ id:'openNormal', label:'通常で開く', href: clean, desc:'既定ブラウザ(Safari) / In-App ブラウザ' },
+					{ id:'openChrome', label:'Chromeで開く', href: links.chrome, desc:'googlechrome(s) スキーム' },
+					{ id:'openEdge', label:'Edgeで開く', href: links.edge, desc:'microsoft-edge-* スキーム' },
+					{ id:'openFirefox', label:'Firefoxで開く', href: links.firefox, desc:'firefox://open-url' },
+					{ id:'openBrave', label:'Braveで開く', href: links.brave, desc:'brave://open-url' },
+				];
+				const frag = document.createDocumentFragment();
+				defs.forEach(d => {
+					const a = document.createElement('a');
+					a.className='btn';
+					if(d.id==='openNormal') a.classList.add('secondary');
+					a.id = d.id;
+						a.rel='noopener';
+					a.href=d.href;
+					a.textContent=d.label;
+					a.setAttribute('data-desc', d.desc);
+					a.addEventListener('click', () => log(`tap ${d.id}: ${d.href}`));
+					frag.appendChild(a);
+				});
+				// Copy button
+				const copyBtn = document.createElement('button');
+				copyBtn.id='copyUrl';
+				copyBtn.textContent='URLをコピー';
+				copyBtn.addEventListener('click', async () => {
+					try { await navigator.clipboard.writeText(clean); copyBtn.textContent='コピー完了'; log('copied url'); setTimeout(()=>copyBtn.textContent='URLをコピー',1800); }
+					catch(e){ copyBtn.textContent='コピー失敗'; log('copy fail '+e); }
+				});
+				frag.appendChild(copyBtn);
+
+				// Android intent sample open (non functional on iOS, but clickable on Android’s Chrome if pasted)
+				const intentBtn = document.createElement('button');
+				intentBtn.id='androidIntent';
+				intentBtn.textContent='Android: intent:// (例)';
+				intentBtn.addEventListener('click', () => {
+					log('intent example tapped');
+					// Provide manual copy if clipboard API fails
+					navigator.clipboard?.writeText(androidIntent).then(()=>{
+						intentBtn.textContent='intentコピー'; setTimeout(()=>intentBtn.textContent='Android: intent:// (例)',1600);
+					}).catch(()=>{
+						alert('以下をコピー:\n'+androidIntent);
+					});
+				});
+				frag.appendChild(intentBtn);
+
+				buttonsWrap.appendChild(frag);
+				buttonsWrap.hidden=false;
+			}
+
+			function process(initialRaw){
+				const decoded = safeDecode(initialRaw);
+				if(decoded) log('decoded param => '+decoded);
+				render(decoded);
+			}
+
+			// Manual generation
+			document.getElementById('generateBtn').addEventListener('click', () => {
+				const v = manualUrlInput.value.trim();
+				manualMsg.textContent='';
+				if(!v){ manualMsg.textContent='URL未入力'; return; }
+				log('manual generate => '+v);
+				process(encodeURI(v)); // process expects encoded raw-ish
+			});
+
+			const params = new URLSearchParams(location.search);
+			const raw = params.get('url') || params.get('ur1'); // (typo fallback)
+			if(!raw) manualSection.hidden=false;
+			process(raw);
+		})();
+	</script>
+</body>
+</html>
