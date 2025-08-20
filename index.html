@@ -81,7 +81,7 @@
 			<h3 style="margin:0 0 .5rem;font-size:1rem">実装ポイント</h3>
 			<ul style="margin:.2rem 0 0;padding-left:1.2rem;">
 				<li>自動遷移なし（ユーザー操作必須 / iOS 仕様対応）。</li>
-				<li>ブラウザ別カスタムスキーム生成 (Chrome / Edge / Firefox / Brave)。</li>
+				<li>ブラウザ別カスタムスキーム生成 (Chrome / Edge / Firefox / Brave / x-safari-* 実験的)。</li>
 				<li>許可ドメイン(ALLOWLIST)のみボタン表示 → オープンリダイレクト防止。</li>
 				<li>Safari(既定)で通常オープン / URLコピー / Android intent 例。</li>
 			</ul>
@@ -147,7 +147,9 @@
 				const firefox = 'firefox://open-url?url=' + encodeURIComponent(u);
 				// Brave
 				const brave = 'brave://open-url?url=' + encodeURIComponent(u);
-				return { chrome, edge, firefox, brave };
+				// Experimental Safari direct scheme (undocumented / may break)
+				const safariX = (isHttps ? 'x-safari-https://' : 'x-safari-http://') + noScheme;
+				return { chrome, edge, firefox, brave, safariX };
 			}
 
 			function buildAndroidIntent(u){
@@ -194,6 +196,7 @@
 
 				const defs = [
 					{ id:'openNormal', label:'通常で開く', href: clean, desc:'既定ブラウザ(Safari) / In-App ブラウザ' },
+					{ id:'openSafariX', label:'Safari(x-safari実験)', href: links.safariX, desc:'x-safari-http(s) 非公式/実験的' },
 					{ id:'openChrome', label:'Chromeで開く', href: links.chrome, desc:'googlechrome(s) スキーム' },
 					{ id:'openEdge', label:'Edgeで開く', href: links.edge, desc:'microsoft-edge-* スキーム' },
 					{ id:'openFirefox', label:'Firefoxで開く', href: links.firefox, desc:'firefox://open-url' },
